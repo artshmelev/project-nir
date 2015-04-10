@@ -1,97 +1,58 @@
 import sys
+import time
+import itertools
 import numpy as np
 from scipy.stats import norm
 from sklearn.gaussian_process import GaussianProcess
-from matplotlib import pyplot as pl
 
-np.random.seed(1)
-LEFT = -3
-RIGHT = 8
-NUMP = 1000
 
 class COGP(object):
-    def __init__(self, func, initial, minimize=True,
-                 storeAllEvaluations=True, storeAllEvaluated=True,
-                 maxEvaluations=10):
+
+    def __init__(self, func, initial, minimize=True, storeAllEvaluations=True,
+                 storeAllEvaluated=True, maxEvaluations=10):
         self.func = func
-        self.lst = initial
+        self.X = np.array(initial)
+        self.y = np.array([func(el) for el in initial])
+        LEFT = np.min(initial)
+        RIGHT = np.max(initial)
+        self.x = [i for i in itertools.product(np.arange(LEFT, RIGHT, 0.1),
+                                               repeat=len(initial[0]))]
+        self.fmin = np.min(self.y)
+        self.argmin = self.X[np.argmin(self.y)]
         self.gp = GaussianProcess(corr='cubic', theta0=1e-2, thetaL=1e-4,
-                                  thetaU=1e-1, random_start=100)
+                                  thetaU=1e-1)
+        self.storeAllEvaluations = storeAllEvaluations
+        self.storeAllEvaluated = storeAllEvaluated
+        if storeAllEvaluations:
+            self._allEvaluations = []
+        if storeAllEvaluated:
+            self._allEvaluated = []
         self.max_evaluations = maxEvaluations
+        self.time = 0
 
     def learn(self):
-        x = np.atleast_2d(np.linspace(LEFT, RIGHT, NUMP)).T
-
+        wall_time = time.time()
         for step in xrange(self.max_evaluations):
-            X = np.atleast_2d(self.lst).T
-            y = self.func(X).ravel()
-            f_min = min(y)
             try:
-                self.gp.fit(X, y)
+                self.gp.fit(self.X, self.y)
             except:
                 break
-            y_pred, MSE = self.gp.predict(x, eval_MSE=True)
-            sigma = np.sqrt(MSE)
+            y_pred, MSE = self.gp.predict(self.x, eval_MSE=True)
 
-            s = (f_min-y_pred) / sigma
-            delta = sigma * (s * norm.cdf(s) + norm.pdf(s))
+            s = (self.fmin-y_pred) / np.sqrt(MSE)
+            argm = np.argmax(MSE * (s * norm.cdf(s) + norm.pdf(s)))
 
-            x_prod = float(np.argmax(sigma * delta)) / NUMP * (RIGHT-LEFT) + LEFT
-            self.lst.append(x_prod)
+            self.X = np.vstack([self.X, self.x[argm]])
+            f = self.func(self.x[argm])
+            if self.storeAllEvaluations:
+                self._allEvaluations.append(f)
+            if self.storeAllEvaluated:
+                self._allEvaluated.append(self.x[argm])
+            self.y = np.hstack([self.y, f])
+            if f < self.fmin:
+                self.fmin = f
+                self.argmin = self.x[argm]
 
-        return (self.lst[-1], self.func(self.lst[-1]))
-            
-
-def f(x):
-    return x * np.sin(x)
-
-def f1(x):
-    return (x-2) ** 2
-
-if __name__ == '__main__':
-    if sys.argv[1] == 'compute':
-        l = COGP(f, [0., 9.], maxEvaluations=int(sys.argv[2]))
-        out = l.learn()
-        print out
-    elif sys.argv[1] == 'plot':
-        lst = [float(LEFT), float(RIGHT)]
-        x = np.atleast_2d(np.linspace(LEFT, RIGHT, NUMP)).T
-        gp = GaussianProcess(corr='cubic', theta0=1e-2, thetaL=1e-4,
-                             thetaU=1e-1, random_start=100)
-
-        while True:
-            lst.append(float(input('enter new point=')))
-            X = np.atleast_2d(lst).T
-            y = f(X).ravel()
-            f_min = min(y)
-
-            gp.fit(X, y)
-
-            y_pred, MSE = gp.predict(x, eval_MSE=True)
-            sigma = np.sqrt(MSE)
-            x_sigma = float(np.argmax(sigma)) / NUMP * (RIGHT-LEFT) + LEFT
-
-            s = (f_min-y_pred) / sigma
-            delta = sigma * (s * norm.cdf(s) + norm.pdf(s))
-            x_delta = float(np.argmax(delta)) / NUMP * (RIGHT-LEFT) + LEFT
-
-            x_prod = float(np.argmax(sigma * delta)) / NUMP * (RIGHT-LEFT) + LEFT
-
-            print 'x_sigma=', x_sigma
-            print 'x_delta=', x_delta
-            print 'use=', x_prod
-
-            fig = pl.figure()
-            pl.plot(x, f(x), 'r:', label=u'$f(x) = x\,\sin(x)$')
-            pl.plot(X, y, 'r.', markersize=10, label=u'Observations')
-            pl.plot(x, y_pred, 'b-', label=u'Prediction')
-            pl.plot(x, delta, 'g-', label=u'delta')
-            pl.plot(x, sigma, 'y-', label=u'sigma')
-
-            pl.xlabel('$x$')
-            pl.ylabel('$f(x)$')
-            pl.ylim(-7, 10)
-            pl.legend(loc='upper left')
-
-            pl.show()
+        self.time = time.time() - wall_time
+        return (np.array(self.argmin), self.fmin)
 
