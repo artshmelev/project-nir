@@ -1,11 +1,8 @@
-import sys
-import time
 import numpy as np
 
 from sklearn.base import is_classifier, clone
 from sklearn.cross_validation import _fit_and_score
 from sklearn.cross_validation import _check_cv as check_cv
-from sklearn.datasets import load_digits
 from sklearn.grid_search import GridSearchCV
 from sklearn.grid_search import ParameterGrid
 from sklearn.grid_search import _CVScoreTuple
@@ -30,7 +27,10 @@ class COGPGridSearch(GridSearchCV):
         for el in grid:
             lst = []
             for k in keys:
-                lst.append(float(el[k]))
+                if isinstance(el[k], int):
+                    lst.append(int(el[k]))
+                else:
+                    lst.append(float(el[k]))
             result.append(tuple(lst))
 
         return result, first
@@ -95,13 +95,13 @@ class COGPGridSearch(GridSearchCV):
                                              score,
                                              np.array(all_scores)))
 
-            print 'In func:', x, score
+            #print 'In func:', x, score
             return score
 
         max_evals = 17 if getattr(self, 'max_evals', None) == None else self.max_evals
         l = COGP(func, maxEvaluations=max_evals, grid=param_list, minimize=False)
         out = l.learn()
-        print 'Out:', out
+        #print 'Out:', out
 
         self.grid_scores_ = grid_scores
 
@@ -125,6 +125,11 @@ class COGPGridSearch(GridSearchCV):
 
 
 if __name__ == '__main__':
+    import sys
+    import time
+
+    from sklearn.datasets import load_digits
+
     if sys.argv[1] == '0':
         algorithm = COGPGridSearch
     else:
